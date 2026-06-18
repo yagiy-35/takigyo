@@ -1,7 +1,17 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Settings, ArrowLeft, Plus, Trash2, ChevronUp, Check, RotateCcw } from "lucide-react";
-import { taskStore } from "./storage";
+import {
+  ArrowLeft,
+  Check,
+  ChevronUp,
+  LogOut,
+  Plus,
+  RotateCcw,
+  Settings,
+  Trash2,
+  User
+} from "lucide-react";
+import { authStore, createTaskStore, migrateGuestTasksToAccount } from "./storage";
 import "./styles.css";
 
 function sortTasks(tasks) {
@@ -20,67 +30,189 @@ function recentDoneTasks(tasks) {
 
 function App() {
   const [screen, setScreen] = useState("main");
+  const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(!authStore.isConfigured());
   const [tasks, setTasks] = useState([]);
   const [draft, setDraft] = useState("");
   const [priority, setPriority] = useState(0);
+  const [authMode, setAuthMode] = useState("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  async function refresh() {
-    const next = await taskStore.list();
-    setTasks(sortTasks(next));
+  const taskStore = useMemo(() => createTaskStore(session), [session]);
+  const isAccount = Boolean(session?.user);
+
+  async function refresh(store = taskStore) {
+    try {
+      const next = await store.list();
+      setTasks(sortTasks(next));
+      setError("");
+    } catch (nextError) {
+      setError(nextError.message);
+    }
   }
 
   useEffect(() => {
-    refresh();
+    let active = true;
+
+    authStore
+      .getSession()
+      .then((nextSession) => {
+        if (!active) return;
+        setSession(nextSession);
+        setAuthReady(true);
+      })
+      .catch((nextError) => {
+        if (!active) return;
+        setError(nextError.message);
+        setAuthReady(true);
+      });
+
+    const unsubscribe = authStore.onAuthStateChange((nextSession) => {
+      setSession(nextSession);
+      setScreen("main");
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, []);
+
+  useEffect(() => {
+    if (authReady) refresh(taskStore);
+  }, [authReady, taskStore]);
+
+  useEffect(() => {
+    if (!authReady || !session?.user) return;
+
+    let active = true;
+    const accountStore = createTaskStore(session);
+
+    migrateGuestTasksToAccount(session)
+      .then(() => {
+        if (active) refresh(accountStore);
+      })
+      .catch((nextError) => {
+        if (active) setError(nextError.message);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [authReady, session?.user?.id]);
 
   const topTask = useMemo(
     () => sortTasks(tasks).find((task) => task.status === "open") ?? null,
     [tasks]
   );
 
+  const openTasks = useMemo(() => tasks.filter((task) => task.status === "open"), [tasks]);
   const undoTargets = useMemo(() => recentDoneTasks(tasks), [tasks]);
+
+  async function runTaskAction(action) {
+    try {
+      await action();
+      await refresh();
+    } catch (nextError) {
+      setError(nextError.message);
+    }
+  }
 
   async function addTask(event) {
     event.preventDefault();
     const text = draft.trim();
     if (!text) return;
-    await taskStore.create(text, priority);
-    setDraft("");
-    setPriority(0);
-    await refresh();
+
+    await runTaskAction(async () => {
+      await taskStore.create(text, priority);
+      setDraft("");
+      setPriority(0);
+    });
   }
 
   async function completeTask(id) {
-    await taskStore.update(id, {
-      status: "done",
-      completedAt: new Date().toISOString()
-    });
-    await refresh();
+    await runTaskAction(() =>
+      taskStore.update(id, {
+        status: "done",
+        completedAt: new Date().toISOString()
+      })
+    );
   }
 
   async function restoreTask(id) {
-    await taskStore.update(id, {
-      status: "open",
-      completedAt: null
-    });
-    await refresh();
+    await runTaskAction(() =>
+      taskStore.update(id, {
+        status: "open",
+        completedAt: null
+      })
+    );
   }
 
   async function prioritizeTask(id) {
     const target = tasks.find((task) => task.id === id);
     if (!target) return;
-    await taskStore.update(id, { priority: target.priority + 1 });
-    await refresh();
+    await runTaskAction(() => taskStore.update(id, { priority: target.priority + 1 }));
   }
 
   async function deleteTask(id) {
-    await taskStore.remove(id);
-    await refresh();
+    await runTaskAction(() => taskStore.remove(id));
+  }
+
+  async function submitAuth(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const nextSession =
+        authMode === "signin"
+          ? await authStore.signIn(email.trim(), password)
+          : await authStore.signUp(email.trim(), password);
+
+      if (nextSession) {
+        setSession(nextSession);
+        setNotice("アカウントのタスク管理に切り替えました。");
+        setScreen("manage");
+      } else {
+        setNotice("確認メールを送信しました。メール内のリンクから登録を完了してください。");
+      }
+
+      setPassword("");
+    } catch (nextError) {
+      setError(nextError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function signOut() {
+    setBusy(true);
+    setError("");
+
+    try {
+      await authStore.signOut();
+      setSession(null);
+      setNotice("ゲストのタスク管理に戻りました。");
+      setScreen("manage");
+    } catch (nextError) {
+      setError(nextError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!authReady) {
+    return <div className="loading">読み込み中</div>;
   }
 
   return (
     <div className="app">
-      {screen === "main" ? (
+      {screen === "main" && (
         <main className="main-screen">
           {topTask ? (
             <button
@@ -95,18 +227,37 @@ function App() {
             <div className="empty">タスクなし</div>
           )}
 
-          <button className="corner-button" onClick={() => setScreen("manage")} aria-label="管理画面を開く">
+          <button
+            className="corner-button"
+            onClick={() => setScreen("manage")}
+            aria-label="管理画面を開く"
+          >
             <Settings size={22} />
           </button>
         </main>
-      ) : (
+      )}
+
+      {screen === "manage" && (
         <main className="manage-screen">
           <header className="manage-header">
-            <button className="icon-button" onClick={() => setScreen("main")} aria-label="メイン画面に戻る">
+            <button className="icon-button" onClick={() => setScreen("main")} aria-label="戻る">
               <ArrowLeft size={22} />
             </button>
-            <h1>管理</h1>
+            <div>
+              <h1>管理</h1>
+              <p className="mode-label">{isAccount ? session.user.email : "ゲスト"}</p>
+            </div>
+            <button
+              className="icon-button"
+              onClick={() => setScreen("account")}
+              aria-label="アカウント管理"
+            >
+              <User size={21} />
+            </button>
           </header>
+
+          {error && <p className="message error">{error}</p>}
+          {notice && <p className="message">{notice}</p>}
 
           <form className="add-form" onSubmit={addTask}>
             <textarea
@@ -146,7 +297,7 @@ function App() {
                       <span>優先度 {task.priority}</span>
                     </div>
                     <div className="task-actions">
-                      <button onClick={() => restoreTask(task.id)} aria-label="未完了へリバース">
+                      <button onClick={() => restoreTask(task.id)} aria-label="未完了に戻す">
                         <RotateCcw size={17} />
                       </button>
                       <button onClick={() => deleteTask(task.id)} aria-label="削除">
@@ -162,33 +313,111 @@ function App() {
           <section className="task-list-section" aria-label="未完了タスク">
             <h2>未完了</h2>
             <div className="task-list">
-              {tasks.filter((task) => task.status === "open").length === 0 ? (
+              {openTasks.length === 0 ? (
                 <p className="muted">未完了タスクはありません。</p>
               ) : (
-                tasks
-                  .filter((task) => task.status === "open")
-                  .map((task) => (
-                    <article className="task-card" key={task.id}>
-                      <p>{task.text}</p>
-                      <div className="task-meta">
-                        <span>優先度 {task.priority}</span>
-                      </div>
-                      <div className="task-actions">
-                        <button onClick={() => completeTask(task.id)} aria-label="完了">
-                          <Check size={17} />
-                        </button>
-                        <button onClick={() => prioritizeTask(task.id)} aria-label="優先度を上げる">
-                          <ChevronUp size={17} />
-                        </button>
-                        <button onClick={() => deleteTask(task.id)} aria-label="削除">
-                          <Trash2 size={17} />
-                        </button>
-                      </div>
-                    </article>
-                  ))
+                openTasks.map((task) => (
+                  <article className="task-card" key={task.id}>
+                    <p>{task.text}</p>
+                    <div className="task-meta">
+                      <span>優先度 {task.priority}</span>
+                    </div>
+                    <div className="task-actions">
+                      <button onClick={() => completeTask(task.id)} aria-label="完了">
+                        <Check size={17} />
+                      </button>
+                      <button onClick={() => prioritizeTask(task.id)} aria-label="優先度を上げる">
+                        <ChevronUp size={17} />
+                      </button>
+                      <button onClick={() => deleteTask(task.id)} aria-label="削除">
+                        <Trash2 size={17} />
+                      </button>
+                    </div>
+                  </article>
+                ))
               )}
             </div>
           </section>
+        </main>
+      )}
+
+      {screen === "account" && (
+        <main className="manage-screen">
+          <header className="manage-header">
+            <button className="icon-button" onClick={() => setScreen("manage")} aria-label="戻る">
+              <ArrowLeft size={22} />
+            </button>
+            <div>
+              <h1>アカウント</h1>
+              <p className="mode-label">{isAccount ? "Supabaseで保存中" : "ゲストで保存中"}</p>
+            </div>
+          </header>
+
+          {error && <p className="message error">{error}</p>}
+          {notice && <p className="message">{notice}</p>}
+
+          {!authStore.isConfigured() ? (
+            <section className="account-panel">
+              <h2>Supabase未設定</h2>
+              <p className="muted">
+                .envにVITE_SUPABASE_URLとVITE_SUPABASE_ANON_KEYを設定すると認証を使えます。
+              </p>
+            </section>
+          ) : isAccount ? (
+            <section className="account-panel">
+              <p className="account-email">{session.user.email}</p>
+              <button className="secondary-button" onClick={signOut} disabled={busy}>
+                <LogOut size={18} />
+                サインアウト
+              </button>
+            </section>
+          ) : (
+            <section className="account-panel">
+              <div className="segmented">
+                <button
+                  className={authMode === "signin" ? "active" : ""}
+                  onClick={() => setAuthMode("signin")}
+                  type="button"
+                >
+                  サインイン
+                </button>
+                <button
+                  className={authMode === "signup" ? "active" : ""}
+                  onClick={() => setAuthMode("signup")}
+                  type="button"
+                >
+                  サインアップ
+                </button>
+              </div>
+
+              <form className="auth-form" onSubmit={submitAuth}>
+                <label>
+                  <span>メールアドレス</span>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    autoComplete="email"
+                    required
+                  />
+                </label>
+                <label>
+                  <span>パスワード</span>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    autoComplete={authMode === "signin" ? "current-password" : "new-password"}
+                    minLength={6}
+                    required
+                  />
+                </label>
+                <button className="primary-button" disabled={busy}>
+                  {authMode === "signin" ? "サインイン" : "サインアップ"}
+                </button>
+              </form>
+            </section>
+          )}
         </main>
       )}
     </div>

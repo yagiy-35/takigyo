@@ -26,6 +26,14 @@ button {
   min-height: 100svh;
 }
 
+.loading {
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  color: #777;
+  font-size: 18px;
+}
+
 .main-screen {
   position: relative;
   min-height: 100svh;
@@ -51,6 +59,9 @@ button {
 .corner-button:focus-visible,
 .icon-button:focus-visible,
 .primary-button:focus-visible,
+.secondary-button:focus-visible,
+.segmented button:focus-visible,
+.auth-form input:focus-visible,
 .task-actions button:focus-visible {
   outline: 3px solid #111;
   outline-offset: 4px;
@@ -87,7 +98,7 @@ button {
 
 .manage-header {
   display: grid;
-  grid-template-columns: 44px 1fr;
+  grid-template-columns: 44px 1fr 44px;
   align-items: center;
   gap: 8px;
   margin-bottom: 20px;
@@ -97,6 +108,12 @@ button {
   margin: 0;
   font-size: 22px;
   letter-spacing: -0.03em;
+}
+
+.mode-label {
+  margin: 3px 0 0;
+  color: #777;
+  font-size: 13px;
 }
 
 .manage-screen h2 {
@@ -133,6 +150,22 @@ textarea {
   min-height: 120px;
 }
 
+.message {
+  border: 1px solid #d7d7d7;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 0 0 14px;
+  background: #fff;
+  color: #333;
+  font-size: 14px;
+}
+
+.message.error {
+  border-color: #d99;
+  color: #8a1f1f;
+  background: #fff6f6;
+}
+
 .priority-control {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -164,7 +197,20 @@ textarea {
   color: #fff;
 }
 
-.primary-button:disabled {
+.secondary-button {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #ddd;
+  border-radius: 999px;
+  padding: 10px 15px;
+  background: #fff;
+  color: #111;
+}
+
+.primary-button:disabled,
+.secondary-button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -226,6 +272,68 @@ textarea {
 
 .muted {
   color: #777;
+}
+
+.account-panel {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+  padding: 16px;
+}
+
+.account-panel h2 {
+  margin: 0;
+}
+
+.account-email {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f7f7f4;
+}
+
+.segmented button {
+  border: 0;
+  padding: 10px;
+  background: transparent;
+  color: #555;
+}
+
+.segmented button.active {
+  background: #111;
+  color: #fff;
+}
+
+.auth-form {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 6px;
+  color: #555;
+  font-size: 14px;
+}
+
+.auth-form input {
+  width: 100%;
+  border: 1px solid #d7d7d7;
+  border-radius: 8px;
+  padding: 11px 12px;
+  background: #fff;
+  color: #111;
 }
 
 @media (max-width: 620px) {
