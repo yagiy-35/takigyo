@@ -224,7 +224,7 @@ function App() {
               {topTask.text}
             </button>
           ) : (
-            <div className="empty">タスクなし</div>
+            <div className="empty">右下からタスクを追加</div>
           )}
 
           <button
