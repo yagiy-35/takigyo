@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import {
   ArrowLeft,
   Check,
+  ChevronDown,
   ChevronUp,
   LogOut,
   Plus,
@@ -156,6 +157,12 @@ function App() {
     const target = tasks.find((task) => task.id === id);
     if (!target) return;
     await runTaskAction(() => taskStore.update(id, { priority: target.priority + 1 }));
+  }
+
+  async function deprioritizeTask(id) {
+    const target = tasks.find((task) => task.id === id);
+    if (!target) return;
+    await runTaskAction(() => taskStore.update(id, { priority: target.priority - 1 }));
   }
 
   async function deleteTask(id) {
@@ -328,6 +335,9 @@ function App() {
                       </button>
                       <button onClick={() => prioritizeTask(task.id)} aria-label="優先度を上げる">
                         <ChevronUp size={17} />
+                      </button>
+                      <button onClick={() => deprioritizeTask(task.id)} aria-label="優先度を下げる">
+                        <ChevronDown size={17} />
                       </button>
                       <button onClick={() => deleteTask(task.id)} aria-label="削除">
                         <Trash2 size={17} />
